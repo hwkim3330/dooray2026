@@ -85,13 +85,32 @@ def download_attachments(post_url):
         return []
 
 def ocr_image(image_path):
-    """이미지에서 텍스트 추출 (OCR)"""
+    """이미지에서 텍스트 추출 (OCR.space API 우선, 실패시 Tesseract)"""
+    # OCR.space 무료 API 시도 (더 정확함)
+    try:
+        with open(image_path, 'rb') as f:
+            resp = requests.post(
+                "https://api.ocr.space/parse/image",
+                files={"file": f},
+                data={"apikey": "helloworld", "language": "kor"},
+                timeout=60
+            )
+        if resp.status_code == 200:
+            result = resp.json()
+            if result.get("ParsedResults"):
+                text = result["ParsedResults"][0].get("ParsedText", "")
+                if text and len(text) > 50:
+                    return text
+    except Exception as e:
+        print(f"OCR.space 오류: {e}")
+
+    # 폴백: Tesseract
     try:
         img = Image.open(image_path)
         text = pytesseract.image_to_string(img, lang='kor+eng')
         return text
     except Exception as e:
-        print(f"OCR 오류: {e}")
+        print(f"Tesseract OCR 오류: {e}")
         return ""
 
 def ocr_pdf(pdf_path):
