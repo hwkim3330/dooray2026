@@ -25,6 +25,13 @@ from telegram.ext import (
 from telegram.request import HTTPXRequest
 from concurrent.futures import ThreadPoolExecutor
 
+# 브라우저 에이전트
+from browser_agent import (
+    browser_goto, browser_screenshot, browser_get_text,
+    browser_click, browser_type, browser_search,
+    browser_links, browser_scroll, browser_close, browser_status
+)
+
 # ═══════════════════════════════════════════════════════════════
 # 설정
 # ═══════════════════════════════════════════════════════════════
@@ -284,6 +291,60 @@ class Tools:
             pass
         return None
 
+    # ═══════════════════════════════════════════════════════════════
+    # 브라우저 도구
+    # ═══════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def browser_open(url: str) -> Dict:
+        """브라우저로 URL 열기"""
+        return browser_goto(url)
+
+    @staticmethod
+    def browser_capture() -> Dict:
+        """브라우저 스크린샷"""
+        return browser_screenshot()
+
+    @staticmethod
+    def browser_read() -> Dict:
+        """브라우저 페이지 텍스트 읽기"""
+        return browser_get_text()
+
+    @staticmethod
+    def browser_google(query: str) -> Dict:
+        """구글 검색"""
+        return browser_search(query)
+
+    @staticmethod
+    def browser_click_element(selector: str) -> Dict:
+        """요소 클릭"""
+        return browser_click(selector)
+
+    @staticmethod
+    def browser_input(selector: str, text: str) -> Dict:
+        """텍스트 입력"""
+        return browser_type(selector, text)
+
+    @staticmethod
+    def browser_get_links() -> Dict:
+        """페이지 링크 목록"""
+        return browser_links()
+
+    @staticmethod
+    def browser_scroll_page(direction: str = "down") -> Dict:
+        """스크롤"""
+        return browser_scroll(direction)
+
+    @staticmethod
+    def browser_quit() -> Dict:
+        """브라우저 종료"""
+        return browser_close()
+
+    @staticmethod
+    def browser_info() -> Dict:
+        """브라우저 상태"""
+        return browser_status()
+
 
 tools = Tools()
 
@@ -306,14 +367,30 @@ class ClaudeAgent:
 ## 사용 가능한 도구
 너는 다음 도구들을 사용할 수 있어:
 
+### 시스템 도구
 1. **shell**: 셸 명령 실행 (ls, cat, git, docker 등)
 2. **read_file**: 파일 읽기
 3. **write_file**: 파일 쓰기
-4. **web_search**: 웹 검색
-5. **fetch_url**: 웹페이지 내용 가져오기
-6. **python**: 파이썬 코드 실행
-7. **image**: 이미지 생성
-8. **system_info**: 시스템 상태 확인
+4. **python**: 파이썬 코드 실행
+5. **system_info**: 시스템 상태 확인
+
+### 웹/검색 도구
+6. **web_search**: 웹 검색 (DuckDuckGo)
+7. **fetch_url**: 웹페이지 내용 가져오기
+
+### 브라우저 도구 (Playwright)
+8. **browser_open**: 브라우저로 URL 열기 {"url": "https://..."}
+9. **browser_screenshot**: 현재 페이지 스크린샷
+10. **browser_read**: 현재 페이지 텍스트 읽기
+11. **browser_google**: 구글 검색 {"query": "검색어"}
+12. **browser_click**: 요소 클릭 {"selector": "CSS선택자"}
+13. **browser_input**: 텍스트 입력 {"selector": "CSS선택자", "text": "입력값"}
+14. **browser_links**: 페이지의 모든 링크 목록
+15. **browser_scroll**: 스크롤 {"direction": "down/up/top/bottom"}
+16. **browser_close**: 브라우저 종료
+
+### 생성 도구
+17. **image**: 이미지 생성 {"prompt": "설명"}
 
 ## 도구 사용법
 도구를 사용하려면 다음 형식으로 응답해:
@@ -401,6 +478,65 @@ class ClaudeAgent:
             elif tool_name == "image":
                 url = tools.generate_image(args.get("prompt", ""))
                 return f"IMAGE_URL:{url}"
+
+            # 브라우저 도구
+            elif tool_name == "browser_open":
+                result = tools.browser_open(args.get("url", ""))
+                if result["success"]:
+                    return f"🌐 브라우저 열림: {result.get('title', '')} ({result.get('url', '')})"
+                return f"❌ 오류: {result.get('error', '')}"
+
+            elif tool_name == "browser_screenshot":
+                result = tools.browser_capture()
+                if result["success"]:
+                    return f"📸 스크린샷 저장: {result.get('path', '')}\nBROWSER_SCREENSHOT:{result.get('path', '')}"
+                return f"❌ 오류: {result.get('error', '')}"
+
+            elif tool_name == "browser_read":
+                result = tools.browser_read()
+                if result["success"]:
+                    return f"📄 페이지 내용 ({result.get('title', '')}):\n{result.get('text', '')[:1500]}..."
+                return f"❌ 오류: {result.get('error', '')}"
+
+            elif tool_name == "browser_google":
+                result = tools.browser_google(args.get("query", ""))
+                if result["success"]:
+                    items = result.get("results", [])[:5]
+                    text = "\n".join([f"• {r['title']}: {r.get('snippet', '')[:80]}..." for r in items])
+                    return f"🔍 구글 검색 결과:\n{text}"
+                return f"❌ 오류: {result.get('error', '')}"
+
+            elif tool_name == "browser_click":
+                result = tools.browser_click_element(args.get("selector", ""))
+                if result["success"]:
+                    return f"👆 클릭 완료: {result.get('url', '')}"
+                return f"❌ 오류: {result.get('error', '')}"
+
+            elif tool_name == "browser_input":
+                result = tools.browser_input(args.get("selector", ""), args.get("text", ""))
+                if result["success"]:
+                    return f"⌨️ 입력 완료"
+                return f"❌ 오류: {result.get('error', '')}"
+
+            elif tool_name == "browser_links":
+                result = tools.browser_get_links()
+                if result["success"]:
+                    links = result.get("links", [])[:10]
+                    text = "\n".join([f"• {l['text'][:50]}: {l['href']}" for l in links])
+                    return f"🔗 페이지 링크:\n{text}"
+                return f"❌ 오류: {result.get('error', '')}"
+
+            elif tool_name == "browser_scroll":
+                result = tools.browser_scroll_page(args.get("direction", "down"))
+                if result["success"]:
+                    return f"📜 스크롤 완료: {result.get('direction', '')}"
+                return f"❌ 오류: {result.get('error', '')}"
+
+            elif tool_name == "browser_close":
+                result = tools.browser_quit()
+                if result["success"]:
+                    return "🔴 브라우저 종료됨"
+                return f"❌ 오류: {result.get('error', '')}"
 
             return f"❌ 알 수 없는 도구: {tool_name}"
         except Exception as e:
@@ -504,7 +640,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [
             InlineKeyboardButton("🔧 도구", callback_data="tools"),
-            InlineKeyboardButton("🧠 메모리", callback_data="memory"),
+            InlineKeyboardButton("🌐 브라우저", callback_data="browser"),
         ],
         [
             InlineKeyboardButton("📰 뉴스", callback_data="news"),
@@ -515,7 +651,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("🎨 이미지", callback_data="image"),
         ],
         [
+            InlineKeyboardButton("🧠 메모리", callback_data="memory"),
             InlineKeyboardButton("💻 시스템", callback_data="system"),
+        ],
+        [
             InlineKeyboardButton("❓ 도움말", callback_data="help"),
         ]
     ]
@@ -523,9 +662,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"안녕하세요 {user.first_name}님! 🤖\n\n"
         f"저는 **AGI 스타일 AI 어시스턴트**예요.\n"
-        f"컴퓨터를 직접 제어하고, 모든 것을 기억해요.\n\n"
+        f"컴퓨터와 브라우저를 직접 제어해요.\n\n"
         f"💬 자연스럽게 대화하세요\n"
-        f"🔧 \"터미널에서 ls 실행해줘\"\n"
+        f"🌐 \"google.com 열어줘\"\n"
         f"📁 \"홈 폴더 파일 목록 보여줘\"\n"
         f"🔍 \"파이썬 비동기 검색해줘\"\n"
         f"🐍 \"1부터 10까지 합 계산해줘\"\n"
@@ -546,17 +685,46 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "tools":
         await query.message.reply_text(
             "🔧 **사용 가능한 도구**\n\n"
-            "• `shell` - 터미널 명령 실행\n"
-            "• `read_file` - 파일 읽기\n"
-            "• `write_file` - 파일 쓰기\n"
-            "• `web_search` - 웹 검색\n"
-            "• `fetch_url` - 웹페이지 가져오기\n"
-            "• `python` - 파이썬 실행\n"
-            "• `image` - 이미지 생성\n"
-            "• `system_info` - 시스템 정보\n\n"
+            "**시스템**\n"
+            "• `shell` - 터미널 명령\n"
+            "• `read/write_file` - 파일 읽기/쓰기\n"
+            "• `python` - 파이썬 실행\n\n"
+            "**브라우저** 🌐\n"
+            "• `browser_open` - URL 열기\n"
+            "• `browser_google` - 구글 검색\n"
+            "• `browser_screenshot` - 스크린샷\n"
+            "• `browser_click/input` - 클릭/입력\n\n"
+            "**기타**\n"
+            "• `web_search` - DuckDuckGo 검색\n"
+            "• `image` - 이미지 생성\n\n"
             "자연어로 요청하면 자동으로 도구를 선택해요!",
             parse_mode="Markdown"
         )
+
+    elif data == "browser":
+        status = tools.browser_info()
+        if status.get("running"):
+            await query.message.reply_text(
+                f"🌐 **브라우저 상태**\n\n"
+                f"✅ 실행 중\n"
+                f"📍 현재 URL: {status.get('current_url', 'N/A')}\n"
+                f"📜 방문 기록: {status.get('history_count', 0)}개\n\n"
+                f"명령어:\n"
+                f"• \"google.com 열어\"\n"
+                f"• \"스크린샷 찍어\"\n"
+                f"• \"페이지 내용 읽어\"",
+                parse_mode="Markdown"
+            )
+        else:
+            await query.message.reply_text(
+                "🌐 **브라우저**\n\n"
+                "브라우저가 실행되지 않았어요.\n\n"
+                "시작하려면:\n"
+                "• \"google.com 열어줘\"\n"
+                "• \"네이버 열어\"\n"
+                "• \"브라우저로 검색해줘 AI 뉴스\"",
+                parse_mode="Markdown"
+            )
 
     elif data == "memory":
         user = memory.get_user(user_id)
@@ -751,6 +919,94 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🖼️ 이미지를 받았어요! (분석 기능 준비 중)")
 
 
+async def browser_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/browser 명령"""
+    if not is_allowed(update.effective_user.id):
+        return
+
+    args = context.args
+    if not args:
+        status = tools.browser_info()
+        if status.get("running"):
+            await update.message.reply_text(
+                f"🌐 브라우저 실행 중\n"
+                f"📍 {status.get('current_url', 'N/A')}\n\n"
+                f"사용법: /browser [URL]"
+            )
+        else:
+            await update.message.reply_text(
+                "🌐 브라우저 사용법:\n"
+                "/browser google.com\n"
+                "/browser https://naver.com"
+            )
+        return
+
+    url = args[0]
+    await update.message.reply_text(f"🌐 {url} 열는 중...")
+
+    result = tools.browser_open(url)
+    if result["success"]:
+        # 스크린샷도 찍기
+        ss = tools.browser_capture()
+        if ss["success"]:
+            await update.message.reply_photo(
+                photo=open(ss["path"], "rb"),
+                caption=f"✅ {result.get('title', '')}\n{result.get('url', '')}"
+            )
+        else:
+            await update.message.reply_text(f"✅ 열림: {result.get('title', '')}")
+    else:
+        await update.message.reply_text(f"❌ 오류: {result.get('error', '')}")
+
+
+async def screenshot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/screenshot 명령"""
+    if not is_allowed(update.effective_user.id):
+        return
+
+    status = tools.browser_info()
+    if not status.get("running"):
+        await update.message.reply_text("🌐 브라우저가 실행 중이 아니에요.\n/browser [URL]로 먼저 열어주세요.")
+        return
+
+    await update.message.reply_text("📸 스크린샷 촬영 중...")
+
+    result = tools.browser_capture()
+    if result["success"]:
+        await update.message.reply_photo(
+            photo=open(result["path"], "rb"),
+            caption=f"📸 {status.get('current_url', '')}"
+        )
+    else:
+        await update.message.reply_text(f"❌ 오류: {result.get('error', '')}")
+
+
+async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/search 명령"""
+    if not is_allowed(update.effective_user.id):
+        return
+
+    query = " ".join(context.args) if context.args else ""
+    if not query:
+        await update.message.reply_text("🔍 검색어를 입력해주세요.\n예: /search AI 뉴스")
+        return
+
+    await update.message.reply_text(f"🔍 '{query}' 검색 중...")
+
+    result = tools.browser_google(query)
+    if result["success"]:
+        items = result.get("results", [])[:5]
+        text = "\n\n".join([f"• **{r['title']}**\n{r.get('snippet', '')[:100]}" for r in items])
+        await update.message.reply_text(f"🔍 검색 결과:\n\n{text}", parse_mode="Markdown")
+
+        # 스크린샷도
+        ss = tools.browser_capture()
+        if ss["success"]:
+            await update.message.reply_photo(photo=open(ss["path"], "rb"))
+    else:
+        await update.message.reply_text(f"❌ 검색 실패: {result.get('error', '')}")
+
+
 def main():
     """봇 시작"""
     print("🤖 AGI 텔레그램 봇 시작...")
@@ -761,6 +1017,9 @@ def main():
 
     # 핸들러
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("browser", browser_command))
+    app.add_handler(CommandHandler("screenshot", screenshot_command))
+    app.add_handler(CommandHandler("search", search_command))
     app.add_handler(CallbackQueryHandler(button_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
