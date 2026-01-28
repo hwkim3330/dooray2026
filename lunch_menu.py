@@ -191,12 +191,12 @@ def extract_with_ai(text, cafeteria_name):
 식단표:
 {text[:2000]}
 
-형식:
-- 메뉴1
-- 메뉴2
-...
+규칙:
+1. 메인 메뉴만 간단히 나열 (밥, 김치, 샐러드 등 기본 반찬 제외)
+2. OCR 오류로 깨진 글자는 추측해서 수정
+3. 형식: "메뉴1, 메뉴2, 메뉴3" (한 줄로)
 
-오늘 메뉴가 없으면 "메뉴 정보 없음"이라고 해주세요."""
+오늘 메뉴가 없으면 "정보없음"이라고만 해주세요."""
 
     try:
         result = subprocess.run(
@@ -212,6 +212,45 @@ def extract_with_ai(text, cafeteria_name):
         pass
 
     return "메뉴 추출 실패"
+
+
+def rank_menus_with_ai(menus):
+    """AI로 메뉴 순위 매기고 추천"""
+    today = datetime.now()
+    weekday = WEEKDAYS[today.weekday()]
+    date_str = today.strftime("%m월 %d일")
+
+    menu_list = "\n".join([f"- {name}: {menu}" for name, menu in menus.items()])
+
+    prompt = f"""오늘({date_str} {weekday}요일) 구내식당 메뉴를 분석해서 순위를 매겨주세요.
+
+각 식당 메뉴:
+{menu_list}
+
+다음 형식으로만 답변:
+🥇 1위: [식당명] - [추천이유 10자 이내]
+🥈 2위: [식당명] - [한줄평 10자 이내]
+🥉 3위: [식당명] - [한줄평 10자 이내]
+(나머지도 순위대로)
+
+💡 오늘의 추천: [1위 식당명]으로 가세요! [이유 15자 이내]
+
+기준: 영양균형, 메뉴다양성, 맛있어보이는정도"""
+
+    try:
+        result = subprocess.run(
+            ["claude", "-p", prompt, "--model", "haiku"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env={**os.environ, "LANG": "ko_KR.UTF-8"}
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except:
+        pass
+
+    return None
 
 def get_kakao_menu():
     """카카오 채널에서 식단 이미지 가져오기"""
@@ -321,22 +360,41 @@ def send_to_dooray(menus):
     weekday = WEEKDAYS[today.weekday()]
 
     if not menus:
-        menu_text = "오늘 식단 정보를 가져오지 못했습니다."
+        message = f"🍴 {date_str} ({weekday}) 오늘의 점심\n\n오늘 식단 정보를 가져오지 못했습니다."
     else:
+        # 식당명 간소화
+        short_names = {
+            "글로벌알앤디센터 구내식당 1월 다섯째주 식단표": "글로벌알앤디센터",
+            "창조경제혁신센터 구내식당 1월 다섯째주 식단표": "창조경제혁신센터",
+            "스타트업캠퍼스 구내식당 1월 다섯째주 식단표": "스타트업캠퍼스",
+            "가온에프앤에스": "가온에프앤에스(코리아바이오파크)",
+        }
+
+        clean_menus = {}
+        for name, menu in menus.items():
+            short_name = short_names.get(name, name.split(" 구내식당")[0] if " 구내식당" in name else name)
+            clean_menus[short_name] = menu
+
+        # 메뉴 목록
         menu_text = ""
-        for cafeteria, menu in menus.items():
-            menu_text += f"🍽️ {cafeteria}\n{menu}\n\n"
+        for cafeteria, menu in clean_menus.items():
+            menu_text += f"🍽️ {cafeteria}\n   {menu}\n\n"
 
-    message = f"""🍴 {date_str} ({weekday}) 오늘의 점심
+        # AI 순위 분석
+        ranking = rank_menus_with_ai(clean_menus)
+
+        message = f"""🍴 {date_str} ({weekday}) 오늘의 점심
 
 ━━━━━━━━━━━━━━━━━━━━
-
 {menu_text.strip()}
-
 ━━━━━━━━━━━━━━━━━━━━
 
-맛있는 점심 되세요! 🍚
-"""
+📊 오늘의 순위
+
+{ranking if ranking else "순위 분석 실패"}
+
+━━━━━━━━━━━━━━━━━━━━
+맛있는 점심 되세요! 🍚"""
 
     payload = {
         "botName": "점심메뉴",
