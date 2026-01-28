@@ -23,6 +23,7 @@ MENU_DIR.mkdir(exist_ok=True)
 
 # 판교 테크노밸리 공지사항
 PANGYO_URL = "https://www.pangyotechnovalley.org/base/board/list?boardManagementNo=18&menuLevel=2&menuNo=55"
+KAKAO_CHANNEL_URL = "https://pf.kakao.com/_GaUIG/posts"
 
 # 요일
 WEEKDAYS = ["월", "화", "수", "목", "금", "토", "일"]
@@ -193,6 +194,72 @@ def extract_with_ai(text, cafeteria_name):
 
     return "메뉴 추출 실패"
 
+def get_kakao_menu():
+    """카카오 채널에서 식단 이미지 가져오기"""
+    try:
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+
+            # 게시물 목록 페이지
+            page.goto(KAKAO_CHANNEL_URL, wait_until='networkidle', timeout=30000)
+
+            # 최신 게시물 링크 찾기
+            post_links = page.query_selector_all('a[href*="/_GaUIG/"]')
+            post_url = None
+            for link in post_links:
+                href = link.get_attribute('href')
+                if href and '/_GaUIG/' in href and href != '/_GaUIG':
+                    if href.split('/')[-1].isdigit():
+                        post_url = 'https://pf.kakao.com' + href
+                        break
+
+            if not post_url:
+                browser.close()
+                return None
+
+            print(f"카카오 최신 게시물: {post_url}")
+
+            # 게시물 페이지로 이동
+            page.goto(post_url, wait_until='networkidle', timeout=30000)
+            page.wait_for_timeout(2000)
+
+            # 이미지 찾기 (가장 큰 이미지 선택)
+            images = page.query_selector_all('img')
+            best_img = None
+            best_size = 0
+
+            for img in images:
+                src = img.get_attribute('src')
+                if src and 'kakaocdn.net' in src:
+                    # 이미지 다운로드해서 크기 확인
+                    try:
+                        img_resp = requests.get(src, timeout=30)
+                        if img_resp.status_code == 200 and len(img_resp.content) > best_size:
+                            best_size = len(img_resp.content)
+                            best_img = img_resp.content
+                    except:
+                        pass
+
+            browser.close()
+
+            if best_img and best_size > 10000:  # 10KB 이상
+                img_path = MENU_DIR / "kakao_menu.jpg"
+                img_path.write_bytes(best_img)
+                print(f"카카오 이미지 다운로드: {best_size} bytes")
+
+                # OCR
+                text = ocr_image(img_path)
+                if text and len(text) > 30:
+                    return text
+
+    except Exception as e:
+        print(f"카카오 채널 오류: {e}")
+
+    return None
+
 def get_all_menus():
     """모든 식당 메뉴 가져오기"""
     menus = {}
@@ -215,6 +282,16 @@ def get_all_menus():
                 menus[name] = menu
     else:
         print("식단표 게시글 못 찾음")
+
+    # 2. 카카오 채널 (가온에프앤에스)
+    print("카카오 채널 메뉴 확인 중...")
+    kakao_text = get_kakao_menu()
+    if kakao_text:
+        print("카카오 채널 OCR 완료")
+        menu = extract_with_ai(kakao_text, "가온에프앤에스(코리아바이오파크)")
+        menus["가온에프앤에스"] = menu
+    else:
+        print("카카오 채널 메뉴 못 찾음")
 
     return menus
 
